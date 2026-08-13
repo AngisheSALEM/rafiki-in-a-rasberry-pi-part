@@ -1,0 +1,16 @@
+[Unit]
+Description=Rafiki Raspberry Pi Arduino Body & Movement Controller Client
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/admin/Rafiki
+ExecStart=/home/admin/Rafiki/.venv/bin/python -m raspberry.app.body_pull_client --brain-url http://10.20.20.224:7860 --body-port /dev/ttyACM0
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONPATH=/home/admin/Rafiki
+
+[Install]
+WantedBy=default.target

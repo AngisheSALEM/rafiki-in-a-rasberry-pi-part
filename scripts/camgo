@@ -1,0 +1,73 @@
+#!/bin/bash
+set -e
+
+echo "=========================================================="
+echo "      Vérification et Démarrage de la Caméra OV5647       "
+echo "=========================================================="
+
+# 1. Vérification matérielle de la caméra
+echo "1. Détection de la caméra OV5647..."
+if rpicam-still --list-cameras | grep -q "No cameras available"; then
+    echo "   ❌ [ERREUR] Aucune caméra physique OV5647 n'est détectée !"
+    echo "   Veuillez vérifier les connexions physiques de la nappe CSI."
+    echo "   Si vous venez de la brancher, un redémarrage de la Raspberry Pi peut être requis."
+    exit 1
+else
+    echo "   ✅ [OK] Caméra OV5647 détectée par le système !"
+fi
+
+# 2. Relancer le pont de la caméra pour /dev/video10
+echo "2. Lancement du pont de caméra virtuelle..."
+# Libérer la caméra de tout processus manuel en cours d'exécution
+echo "   Libération du matériel de la caméra (arrêt de rpicam-vid)..."
+pkill -f rpicam-vid || true
+sleep 1
+
+# Comme le service systemd gère le pont, on le relance
+sudo systemctl restart ov5647-webcam.service
+
+
+# Attendre la création du périphérique de boucle
+for i in {1..10}; do
+    if [ -c /dev/video10 ]; then
+        break
+    fi
+    sleep 0.5
+done
+
+if [ ! -c /dev/video10 ]; then
+    echo "   ❌ [ERREUR] Le périphérique /dev/video10 est introuvable."
+    exit 1
+fi
+echo "   ✅ [OK] Périphérique /dev/video10 prêt et actif !"
+
+# 3. Démarrage/Redémarrage de l'API de vision sur le port 8000
+echo "   Pause de 3 secondes pour permettre au pont de caméra d'initialiser le flux..."
+sleep 3
+
+echo "3. Démarrage de l'API Vision (Port 8000)..."
+systemctl --user restart rpi-vision.service
+
+echo "   Attente de l'initialisation de l'API..."
+API_READY=false
+for i in {1..10}; do
+    if curl -s --max-time 2 http://localhost:8000/health | grep -q "online"; then
+        API_READY=true
+        break
+    fi
+    sleep 1
+done
+
+# Vérification finale de l'API
+if [ "$API_READY" = true ]; then
+    echo "   ✅ [OK] Le service API Vision fonctionne !"
+    echo "=========================================================="
+    echo " Visitez la galerie photo : http://localhost:8000"
+    echo "=========================================================="
+else
+    echo "   ❌ [ERREUR] Impossible de joindre l'API sur le port 8000."
+    echo "   Consultez les logs de l'API en utilisant :"
+    echo "   sudo journalctl -n 50 --no-pager"
+    exit 1
+fi
+
